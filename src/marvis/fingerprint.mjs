@@ -46,6 +46,10 @@ let beaconError = ""
 let commonKey = ""
 let qimeiCache = ""
 let externalQimei = ""
+let androidLib = null
+let androidCtx = 0
+let androidError = ""
+let warnedAndroid = false
 let warnedRandom = false
 let warnedNative = false
 
@@ -118,6 +122,10 @@ function loadBeacon(common = {}) {
 function uskeyUrl() {
   const env = String(process.env.MARVIS_USKEY_URL || "").trim()
   if (env) return env
+  // Android / ARM64 的 magpie App：默认找本机 DSH 出票守护进程（启动脚本会自动拉起）。
+  if (process.platform === "android" || (process.platform === "linux" && process.arch === "arm64")) {
+    return "http://127.0.0.1:4617/uskey"
+  }
   for (const name of ["uskey-url.txt", "uskey_url.txt"]) {
     try {
       const v = readFileSync(join(NATIVE_DIR, name), "utf8").trim()
@@ -279,6 +287,55 @@ export function syntheticUskey() {
 }
 
 /**
+ * Android / Bun 内置出票：直接 dlopen APP 里的 libqimei.so，调用导出的
+ * UKInstanceGetDefault / UKInstanceInit / UKInstanceGetUSkey。
+ *
+ * 这条路只依赖插件 native/libqimei.so，不再需要外部 Python 服务；
+ * Node（Windows / Linux）上 process.versions.bun 为空，会跳过。
+ */
+async function androidBunUskey(busInfo) {
+  if (!process.versions?.bun) {
+    androidError = "process.versions.bun 不存在（当前不是 Bun 运行时）"
+    return ""
+  }
+  const libPath = join(NATIVE_DIR, "libqimei.so")
+  if (!existsSync(libPath)) return ""
+  try {
+    if (!androidLib) {
+      const { dlopen, FFIType } = await import("bun:ffi")
+      androidLib = dlopen(libPath, {
+        UKInstanceGetDefault: { args: [], returns: FFIType.ptr },
+        UKInstanceInit: {
+          args: [FFIType.ptr, FFIType.cstring, FFIType.cstring],
+          returns: FFIType.void,
+        },
+        UKInstanceGetUSkey: {
+          args: [FFIType.ptr, FFIType.cstring, FFIType.cstring, FFIType.cstring],
+          returns: FFIType.cstring,
+        },
+      })
+      androidCtx = androidLib.symbols.UKInstanceGetDefault()
+      androidLib.symbols.UKInstanceInit(androidCtx, APP_KEY, APP_VERSION)
+    }
+    const ticket = androidLib.symbols.UKInstanceGetUSkey(androidCtx, "marvis", busInfo, "")
+    return String(ticket || "").trim()
+  } catch (err) {
+    androidError = `${err?.name ?? "Error"}: ${err?.message ?? err}`
+    if (!warnedAndroid) {
+      warnedAndroid = true
+      if (process.env.MARVIS_DEBUG_FFI === "1") {
+        try {
+          console.warn(`[marvis-fingerprint] Android Bun 出票失败：${androidError}`)
+        } catch {
+          /* 日志失败不影响请求 */
+        }
+      }
+    }
+    return ""
+  }
+}
+
+/**
  * 按本次请求上下文出一张 uskey。
  *
  * @param {{ guid?: string, openid?: string, loginType?: string }} [acct]
@@ -294,6 +351,9 @@ export async function uskeyOf(acct = {}, identity = {}) {
     login_openid: String(acct.openid ?? ""),
     login_type: String(identity.loginType ?? process.env.MARVIS_LOGIN_TYPE ?? "6"),
   }
+
+  const android = await androidBunUskey(busInfo)
+  if (android) return android
 
   const b = loadBeacon(common)
   if (b && typeof b.getUskey === "function") {
@@ -341,8 +401,8 @@ export function fingerprintStatus() {
     nativeDir: NATIVE_DIR,
     qimei36: qimei ? `${qimei.slice(0, 6)}…` : "",
     qimei36Length: qimei.length,
-    backend: native ? "native" : uskeyUrl() ? "external" : "random",
-    error: beaconError,
+    backend: androidLib ? "android-bun" : native ? "native" : uskeyUrl() ? "external" : "random",
+    error: androidError || beaconError,
   }
 }
 
