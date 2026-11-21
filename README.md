@@ -144,7 +144,7 @@ Node 出票服务（需要 `native/` 的 4 个文件）。
 |---|---|---|
 | `MARVIS_NATIVE_DIR` | 插件根目录/native | Beacon SDK 目录 |
 | `MARVIS_QIMEI36` | 空 | 真实 qimei36（36/40 位，以实际客户端为准） |
-| `MARVIS_USKEY_URL` | 空 | 外部出票服务地址 |
+| `MARVIS_USKEY_URL` | 空 | 外部出票服务地址；也可写在 `native/uskey-url.txt` |
 | `MARVIS_APP_VERSION` | `1.60.3400.35` | Beacon `init` 的 appver |
 | `MARVIS_CLIENT_VERSION` | `1.60.3400.795` | MarvisExt.clientVersion |
 | `MARVIS_OS_VERSION` | `Windows-10-10.0.26100` | MarvisExt.osVersion |

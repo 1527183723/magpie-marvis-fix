@@ -112,6 +112,24 @@ function loadBeacon(common = {}) {
 }
 
 /**
+ * 外部出票服务地址：环境变量优先，其次插件 native/uskey-url.txt。
+ * Android 手机上没有环境变量时，可以把 URL 写在文件里。
+ */
+function uskeyUrl() {
+  const env = String(process.env.MARVIS_USKEY_URL || "").trim()
+  if (env) return env
+  for (const name of ["uskey-url.txt", "uskey_url.txt"]) {
+    try {
+      const v = readFileSync(join(NATIVE_DIR, name), "utf8").trim()
+      if (v) return v
+    } catch {
+      /* 文件不存在就继续 */
+    }
+  }
+  return ""
+}
+
+/**
  * 从外部出票服务取一张 uskey。
  *
  * 请求：POST `MARVIS_USKEY_URL`
@@ -123,7 +141,7 @@ function loadBeacon(common = {}) {
  * @returns {Promise<string>}
  */
 async function externalUskey(common, busInfo) {
-  const url = (process.env.MARVIS_USKEY_URL || "").trim()
+  const url = uskeyUrl()
   if (!url) return ""
   try {
     const res = await fetch(url, {
@@ -323,7 +341,7 @@ export function fingerprintStatus() {
     nativeDir: NATIVE_DIR,
     qimei36: qimei ? `${qimei.slice(0, 6)}…` : "",
     qimei36Length: qimei.length,
-    backend: native ? "native" : process.env.MARVIS_USKEY_URL ? "external" : "random",
+    backend: native ? "native" : uskeyUrl() ? "external" : "random",
     error: beaconError,
   }
 }
@@ -331,6 +349,6 @@ export function fingerprintStatus() {
 /** 给用户看的说明 */
 export function fingerprintHint() {
   if (usingNativeFingerprint()) return "使用 native/ 里的 Beacon SDK 现签设备指纹"
-  if (process.env.MARVIS_USKEY_URL) return "使用外部出票服务（MARVIS_USKEY_URL）"
+  if (uskeyUrl()) return "使用外部出票服务（MARVIS_USKEY_URL / native/uskey-url.txt）"
   return "未配置真实出票：随机 uskey 会被上游 4100404 拦截"
 }
