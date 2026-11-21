@@ -20,3 +20,6 @@ native/qimei.txt
 # 本地打包/提取物，不入仓库
 *.zip
 *.apk
+
+# 本机上传说明，不入公开仓库
+UPLOAD.md
